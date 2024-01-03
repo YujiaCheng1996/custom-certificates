@@ -25,8 +25,7 @@ jobs:
         uses: ncipollo/release-action@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          artifacts: "adguardcert-*.zip"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: "customcertificates-*.zip"
           generateReleaseNotes: true
 
       - name: write PR url
@@ -38,8 +37,8 @@ jobs:
         uses: actions/upload-artifact@v3
         if: github.event_name == 'pull_request'
         with:
-          name: adguardcert module build
+          name: custom certificates module build
           path: |
-            adguardcert-*.zip
+            customcertificates-*.zip
             README.md
             pull_request_url.txt

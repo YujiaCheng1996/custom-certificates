@@ -1,7 +1,7 @@
-id=adguardcert
-name=AdGuard Certificate
-version=v2.0
+id=customcertificates
+name=Custom Certificates
+version=v2.1
 versionCode=35
-author=AdGuard
-description=Moves AdGuard's root CA certificate from the user certificate store to the system certificate store.
-updateJson=https://raw.githubusercontent.com/AdguardTeam/adguardcert/master/update.json
+author=YujiaCheng1996
+description=A Magisk module which adds custom certificates to the system trust store.
+updateJson=https://raw.githubusercontent.com/YujiaCheng1996/custom-certificates/master/update.json
