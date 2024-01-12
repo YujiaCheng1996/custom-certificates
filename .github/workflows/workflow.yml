@@ -25,7 +25,7 @@ jobs:
         uses: ncipollo/release-action@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          artifacts: "customcertificates-*.zip"
+          artifacts: "custom-certificates-*.zip"
           generateReleaseNotes: true
 
       - name: write PR url
@@ -39,6 +39,6 @@ jobs:
         with:
           name: custom certificates module build
           path: |
-            customcertificates-*.zip
+            custom-certificates-*.zip
             README.md
             pull_request_url.txt
