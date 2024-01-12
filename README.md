@@ -1,6 +1,9 @@
-# Custom Certificate
+# Custom Certificate(s)
 
 Based on [AdGuard Certificate](https://github.com/AdguardTeam/adguardcert) and [custom-certificate-authorities](https://github.com/Magisk-Modules-Alt-Repo/custom-certificate-authorities).
+
+**Attention**
+This doesn't work along with modules above, remove them before using this module.
 
 **Attention**
 All user Certificates will be copied to the system store after reboot!!!
