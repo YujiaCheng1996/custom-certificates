@@ -17,8 +17,13 @@ jobs:
 
       - name: build dist
         run: |
-          git submodule init && git submodule update
-          ./dist.sh
+          UPDATE_BINARY_URL="https://raw.githubusercontent.com/topjohnwu/Magisk/master/scripts/module_installer.sh"
+          curl "${UPDATE_BINARY_URL}" > ./META-INF/com/google/android/update-binary
+          echo "#MAGISK" > ./META-INF/com/google/android/updater-script
+          VERSION=$(sed -ne "s/version=\(.*\)/\1/gp" ./module.prop)
+          NAME=$(sed -ne "s/id=\(.*\)/\1/gp" ./module.prop)
+          rm -f ${NAME}-${VERSION}.zip
+          zip -r ${NAME}-${VERSION}.zip META-INF system module.prop post-fs-data.sh
           ls -la
 
       - name: create release
