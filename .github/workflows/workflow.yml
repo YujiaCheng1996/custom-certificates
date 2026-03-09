@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - name: build dist
         run: |
@@ -30,6 +30,7 @@ jobs:
         uses: ncipollo/release-action@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
+          allowUpdates: true
           artifacts: "custom-certificates-*.zip"
           generateReleaseNotes: true
           prerelease: ${{ contains(github.ref, '-') }}
@@ -40,7 +41,7 @@ jobs:
           echo "${{ github.event.pull_request.html_url }}" > pull_request_url.txt
 
       - name: upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         if: github.event_name == 'pull_request'
         with:
           name: custom certificates module build
@@ -48,6 +49,7 @@ jobs:
             custom-certificates-*.zip
             README.md
             pull_request_url.txt
+          overwrite: true
 
       - name: update json
         if: startsWith(github.ref, 'refs/tags/v')
