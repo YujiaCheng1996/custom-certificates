@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-exec > /data/local/tmp/custom-certificates.log
+exec > /dev/null
 exec 2>&1
 
 set -x
@@ -26,6 +26,7 @@ set_context() {
 # Keep AdGuard Personal Intermediate Certificate in user store.
 AdGuard_Personal_Intermediate_HASH=47ec1af8
 
+mkdir -p $MODDIR/system/etc/security/cacerts
 chmod -R 644 /data/misc/user/0/cacerts-custom
 cp -f /data/misc/user/0/cacerts-custom/* $MODDIR/system/etc/security/cacerts/
 cp -f /data/misc/user/0/cacerts-added/* $MODDIR/system/etc/security/cacerts/
@@ -33,34 +34,40 @@ rm $MODDIR/system/etc/security/cacerts/${AdGuard_Personal_Intermediate_HASH}.*
 chown -R 0:0 $MODDIR/system/etc/security/cacerts
 chmod -R 644 $MODDIR/system/etc/security/cacerts
 chcon -R u:object_r:system_security_cacerts_file:s0 $MODDIR/system/etc/security/cacerts
-set_context /system/etc/security/cacerts ${MODDIR}/system/etc/security/cacerts
+set_context /system/etc/security/cacerts $MODDIR/system/etc/security/cacerts
 
 # Android 14 support
 # Since Magisk ignore /apex for module file injections, use non-Magisk way
 if [ -d /apex/com.android.conscrypt/cacerts ]; then
-    # Clone directory into tmpfs
-    rm -f /data/local/tmp/all-ca-copy
-    mkdir -p /data/local/tmp/all-ca-copy
-    mount -t tmpfs tmpfs /data/local/tmp/all-ca-copy
-    cp -f /apex/com.android.conscrypt/cacerts/* /data/local/tmp/all-ca-copy/
-
-    # Do the same as in Magisk module
-    cp -f /data/misc/user/0/cacerts-custom/* /data/local/tmp/all-ca-copy
-    cp -f /data/misc/user/0/cacerts-added/* /data/local/tmp/all-ca-copy
-    rm /data/local/tmp/all-ca-copy/${AdGuard_Personal_Intermediate_HASH}.*
-    set_context /apex/com.android.conscrypt/cacerts /data/local/tmp/all-ca-copy
-
-    # Mount directory inside APEX and remove temporary one.
-    CERTS_NUM="$(ls -1 /data/local/tmp/all-ca-copy | wc -l)"
-    if [ "$CERTS_NUM" -gt 15 ]; then
-        mount --bind /data/local/tmp/all-ca-copy /apex/com.android.conscrypt/cacerts
-        for pid in 1 $(pgrep zygote) $(pgrep zygote64); do
-            nsenter --mount=/proc/${pid}/ns/mnt -- \
-                /bin/mount --bind /data/local/tmp/all-ca-copy /apex/com.android.conscrypt/cacerts
-        done
+    if grep -Eq 'partitions.*"apex"' /data/adb/hybrid-mount/config.toml; then
+        mkdir -p $MODDIR/apex/com.android.conscrypt/cacerts
+        cp $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
+        set_context /apex/com.android.conscrypt/cacerts $MODDIR/system/etc/security/cacerts
     else
-        echo "Cancelling replacing CA storage due to safety"
+        # Clone directory into tmpfs
+        rm -f /data/local/tmp/all-ca-copy
+        mkdir -p /data/local/tmp/all-ca-copy
+        mount -t tmpfs tmpfs /data/local/tmp/all-ca-copy
+        cp -f /apex/com.android.conscrypt/cacerts/* /data/local/tmp/all-ca-copy/
+
+        # Do the same as in Magisk module
+        cp -f /data/misc/user/0/cacerts-custom/* /data/local/tmp/all-ca-copy
+        cp -f /data/misc/user/0/cacerts-added/* /data/local/tmp/all-ca-copy
+        rm /data/local/tmp/all-ca-copy/${AdGuard_Personal_Intermediate_HASH}.*
+        set_context /apex/com.android.conscrypt/cacerts /data/local/tmp/all-ca-copy
+
+        # Mount directory inside APEX and remove temporary one.
+        CERTS_NUM="$(ls -1 /data/local/tmp/all-ca-copy | wc -l)"
+        if [ "$CERTS_NUM" -gt 15 ]; then
+            mount --bind /data/local/tmp/all-ca-copy /apex/com.android.conscrypt/cacerts
+            for pid in 1 $(pgrep zygote) $(pgrep zygote64); do
+                nsenter --mount=/proc/${pid}/ns/mnt -- \
+                    /bin/mount --bind /data/local/tmp/all-ca-copy /apex/com.android.conscrypt/cacerts
+            done
+        else
+            echo "Cancelling replacing CA storage due to safety"
+        fi
+        umount /data/local/tmp/all-ca-copy
+        rmdir /data/local/tmp/all-ca-copy
     fi
-    umount /data/local/tmp/all-ca-copy
-    rmdir /data/local/tmp/all-ca-copy
 fi
