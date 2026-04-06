@@ -43,6 +43,10 @@ if [ -d /apex/com.android.conscrypt/cacerts ]; then
         mkdir -p $MODDIR/apex/com.android.conscrypt/cacerts
         cp $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
         set_context /apex/com.android.conscrypt/cacerts $MODDIR/system/etc/security/cacerts
+        for pid in 1 $(pgrep zygote) $(pgrep zygote64); do
+            nsenter --mount=/proc/${pid}/ns/mnt -- \
+                /bin/mount --bind $MODDIR/apex/com.android.conscrypt/cacerts /apex/com.android.conscrypt/cacerts;
+        done
     else
         # Clone directory into tmpfs
         rm -f /data/local/tmp/all-ca-copy

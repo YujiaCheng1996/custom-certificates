@@ -1,7 +1,7 @@
 id=custom-certificates
 name=Custom Certificates
-version=v2.5
-versionCode=40
+version=v2.6
+versionCode=41
 author=YujiaCheng1996
 description=A Magisk module which adds custom certificates to the system trust store.
 updateJson=https://raw.githubusercontent.com/YujiaCheng1996/custom-certificates/master/update.json
