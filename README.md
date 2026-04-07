@@ -9,9 +9,10 @@ To hide tmpfs traces that may be detected by some root detector apps, this modul
 All user Certificates will be copied to the system store after reboot!!!
 Trust them at your own risk!!!
 
-If you disable or uninstall [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount), remember to either delete `/data/adb/hybrid-mount/config.toml` or remove `apex` from the partitions list in that file, otherwise this module may not work properly!!!
+If you disable or uninstall [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount), remember to either delete `/data/adb/meta-hybrid/config.toml` (or the older `/data/adb/hybrid-mount/config.toml`) or remove `apex` from the partitions list in that file, otherwise this module may not work properly!!!
 
 ## Simple Usage
+
 1. Trust the certificate(s) you want to use.
 2. Reboot.
 

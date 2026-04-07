@@ -5,7 +5,25 @@ exec 2>&1
 
 set -x
 
-MODDIR=${0%/*}
+MODDIR=${MODDIR:-${0%/*}}
+META_HYBRID_CONFIG=
+
+find_meta_hybrid_config() {
+    for config in /data/adb/meta-hybrid/config.toml /data/adb/hybrid-mount/config.toml; do
+        if [ -f "$config" ]; then
+            META_HYBRID_CONFIG="$config"
+            return 0
+        fi
+    done
+
+    META_HYBRID_CONFIG=
+    return 1
+}
+
+meta_hybrid_handles_apex() {
+    find_meta_hybrid_config || return 1
+    grep -Eq 'partitions.*"apex"|^[[:space:]]*"apex"[[:space:]]*$' "$META_HYBRID_CONFIG"
+}
 
 set_context() {
     [ "$(getenforce)" = "Enforcing" ] || return 0
@@ -30,7 +48,7 @@ mkdir -p $MODDIR/system/etc/security/cacerts
 chmod -R 644 /data/misc/user/0/cacerts-custom
 cp -f /data/misc/user/0/cacerts-custom/* $MODDIR/system/etc/security/cacerts/
 cp -f /data/misc/user/0/cacerts-added/* $MODDIR/system/etc/security/cacerts/
-rm $MODDIR/system/etc/security/cacerts/${AdGuard_Personal_Intermediate_HASH}.*
+rm -f $MODDIR/system/etc/security/cacerts/${AdGuard_Personal_Intermediate_HASH}.*
 chown -R 0:0 $MODDIR/system/etc/security/cacerts
 chmod -R 644 $MODDIR/system/etc/security/cacerts
 chcon -R u:object_r:system_security_cacerts_file:s0 $MODDIR/system/etc/security/cacerts
@@ -39,15 +57,11 @@ set_context /system/etc/security/cacerts $MODDIR/system/etc/security/cacerts
 # Android 14 support
 # Since Magisk ignore /apex for module file injections, use non-Magisk way
 if [ -d /apex/com.android.conscrypt/cacerts ]; then
-    if grep -Eq 'partitions.*"apex"' /data/adb/hybrid-mount/config.toml; then
+    if meta_hybrid_handles_apex; then
         mkdir -p $MODDIR/apex/com.android.conscrypt/cacerts
-        cp $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
-        cp -f /apex/com.android.conscrypt/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
-        set_context /apex/com.android.conscrypt/cacerts $MODDIR/system/etc/security/cacerts
-        for pid in 1 $(pgrep zygote) $(pgrep zygote64); do
-            nsenter --mount=/proc/${pid}/ns/mnt -- \
-                /bin/mount --bind $MODDIR/apex/com.android.conscrypt/cacerts /apex/com.android.conscrypt/cacerts;
-        done
+        cp -f /apex/com.android.conscrypt/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts/
+        cp -f $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts/
+        set_context /apex/com.android.conscrypt/cacerts $MODDIR/apex/com.android.conscrypt/cacerts
     else
         # Clone directory into tmpfs
         rm -f /data/local/tmp/all-ca-copy

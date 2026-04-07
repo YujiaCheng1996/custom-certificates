@@ -21,7 +21,7 @@ jobs:
           VERSION=$(sed -ne "s/version=\(.*\)/\1/gp" ./module.prop)
           NAME=$(sed -ne "s/id=\(.*\)/\1/gp" ./module.prop)
           rm -f ${NAME}-${VERSION}.zip
-          zip -r ${NAME}-${VERSION}.zip META-INF system module.prop post-fs-data.sh
+          zip -r ${NAME}-${VERSION}.zip META-INF system module.prop post-fs-data.sh late-load.sh post-mount.sh
           ls -la
 
       - name: create release
