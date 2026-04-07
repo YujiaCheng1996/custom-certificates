@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom Certificates</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="background background-a"></div>
+    <div class="background background-b"></div>
+    <main class="shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <div class="hero-topline">
+            <h1 data-i18n="hero.title">证书仓库</h1>
+            <div id="statusBadge" class="status-badge">
+              <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+              <span id="statusText" data-i18n="status.connecting">准备连接</span>
+            </div>
+          </div>
+          <p class="lede" data-i18n="hero.lede">查看、解析、移动与导入用户证书。目录改动会立即写入文件系统，但系统信任链通常需要重启后才会完全生效。</p>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <section class="column">
+          <div class="column-head">
+            <div>
+              <p class="section-label">cacerts-custom</p>
+              <div class="path-row">
+                <h2>/data/misc/user/0/cacerts-custom</h2>
+                <span id="customCount" class="count-chip">0</span>
+              </div>
+            </div>
+          </div>
+          <div id="customList" class="cert-list"></div>
+        </section>
+
+        <section class="column">
+          <div class="column-head">
+            <div>
+              <p class="section-label">cacerts-added</p>
+              <div class="path-row">
+                <h2>/data/misc/user/0/cacerts-added</h2>
+                <span id="addedCount" class="count-chip">0</span>
+              </div>
+            </div>
+          </div>
+          <div id="addedList" class="cert-list"></div>
+        </section>
+      </section>
+
+      <section class="import-panel">
+        <div>
+          <p class="section-label" data-i18n="import.sectionLabel">导入证书</p>
+          <h2 data-i18n="import.heading">选择文件或链接并转换保存</h2>
+          <p class="section-copy" data-i18n="import.copy">支持 PEM 或 DER。文件和 URL 二选一即可；若两者都填写，仍会优先使用所选文件。</p>
+        </div>
+        <div class="import-form">
+          <label class="field">
+            <span data-i18n="import.targetLabel">保存到</span>
+            <select id="importTarget">
+              <option value="custom">/data/misc/user/0/cacerts-custom</option>
+              <option value="added">/data/misc/user/0/cacerts-added</option>
+            </select>
+          </label>
+          <label class="field field-file">
+            <span data-i18n="import.fileLabel">证书文件</span>
+            <input id="importFiles" type="file" multiple>
+          </label>
+          <label class="field">
+            <span data-i18n="import.urlLabel">证书 URL</span>
+            <input id="importUrl" type="url" placeholder="https://example.com/cacert.pem" data-i18n-placeholder="import.urlPlaceholder">
+            <small class="field-hint" data-i18n="import.urlHint">文件和 URL 二选一即可。若两者都提供，将优先使用文件。</small>
+          </label>
+          <button id="importButton" class="button button-primary" type="button" data-i18n="import.submit">转换并导入</button>
+        </div>
+        <div id="importResult" class="message" hidden></div>
+      </section>
+    </main>
+    <div id="fabStack" class="fab-stack">
+      <button id="fabLanguageButton" class="fab-button fab-language button button-secondary" type="button" aria-label="Switch language" title="Switch language">EN</button>
+      <button id="fabRefreshButton" class="fab-button fab-refresh button button-primary" type="button" aria-label="刷新列表" title="刷新列表" data-i18n-aria-label="fab.refresh" data-i18n-title="fab.refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 1-15.36 6.36" />
+          <path d="M3 12a9 9 0 0 1 15.36-6.36" />
+          <path d="M21 3v6h-6" />
+          <path d="M3 21v-6h6" />
+        </svg>
+      </button>
+    </div>
+    <script src="./reflection.min.js"></script>
+    <script src="./x509.min.js"></script>
+    <script src="./cert-text.js"></script>
+    <script src="./i18n.js"></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
