@@ -42,6 +42,7 @@ if [ -d /apex/com.android.conscrypt/cacerts ]; then
     if grep -Eq 'partitions.*"apex"' /data/adb/hybrid-mount/config.toml; then
         mkdir -p $MODDIR/apex/com.android.conscrypt/cacerts
         cp $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
+        cp -f /apex/com.android.conscrypt/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts
         set_context /apex/com.android.conscrypt/cacerts $MODDIR/system/etc/security/cacerts
         for pid in 1 $(pgrep zygote) $(pgrep zygote64); do
             nsenter --mount=/proc/${pid}/ns/mnt -- \
