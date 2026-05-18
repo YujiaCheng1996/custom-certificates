@@ -5,13 +5,13 @@
 本模块基于 [AdGuard Certificate](https://github.com/AdguardTeam/adguardcert) 和 [custom-certificate-authorities](https://github.com/Magisk-Modules-Alt-Repo/custom-certificate-authorities)。
 它与上述模块不兼容，因此在使用本模块前请先移除它们。
 
-为了隐藏可能被某些 Root 检测应用发现的 tmpfs 痕迹，本模块支持 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount)。请先安装它，并在安装本模块之前将 `apex` 加入其分区列表。
+为了隐藏可能被某些 Root 检测应用发现的 tmpfs 痕迹，本模块新增支持 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount)。请先安装它。
 
 **警告**
 重启后，所有用户证书都会被复制到系统证书存储中。
 请自行承担信任这些证书的风险。
 
-如果你禁用或卸载了 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount)，请记得删除 `/data/adb/meta-hybrid/config.toml`（或旧版路径 `/data/adb/hybrid-mount/config.toml`），或者从该文件的分区列表中移除 `apex`。否则，本模块可能无法正常工作。
+如果你使用 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) 的旧版本，需要手动将 `apex` 加入其分区列表，否则，本模块可能无法正常工作。
 
 ## 简单用法
 

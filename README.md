@@ -5,13 +5,13 @@
 This module is based on [AdGuard Certificate](https://github.com/AdguardTeam/adguardcert) and [custom-certificate-authorities](https://github.com/Magisk-Modules-Alt-Repo/custom-certificate-authorities).
 It is not compatible with those modules, so remove them before using this one.
 
-To hide tmpfs traces that may be detected by some root detection apps, this module supports [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount). Install it and add `apex` to its partitions list before installing this module.
+To hide tmpfs traces that may be detected by some root detection apps, this module now supports [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount). Install it first.
 
 **Warning**
 All user certificates will be copied to the system store after reboot.
 Trust them at your own risk.
 
-If you disable or uninstall [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount), remember to either delete `/data/adb/meta-hybrid/config.toml` (or the older `/data/adb/hybrid-mount/config.toml`) or remove `apex` from the partitions list in that file. Otherwise, this module may stop working properly.
+If you are using an older version of [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount), you need to manually add `apex` to its partitions list, otherwise this module may not work properly.
 
 ## Simple Usage
 

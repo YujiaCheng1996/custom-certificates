@@ -5,28 +5,16 @@ exec 2>&1
 
 MODDIR=${0%/*}
 
-find_meta_hybrid_config() {
-    for config in /data/adb/meta-hybrid/config.toml /data/adb/hybrid-mount/config.toml; do
-        if [ -f "$config" ]; then
-            META_HYBRID_CONFIG="$config"
-            return 0
-        fi
-    done
-
-    META_HYBRID_CONFIG=
-    return 1
-}
-
-meta_hybrid_handles_apex() {
-    find_meta_hybrid_config || return 1
-    grep -Eq 'partitions.*"apex"|^[[:space:]]*"apex"[[:space:]]*$' "$META_HYBRID_CONFIG"
+is_hybrid_mount_running() {
+    local cli="/data/adb/metamodule/hybrid-mount"
+    [ -f "$cli" ] && "$cli" api version >/dev/null 2>&1
 }
 
 if [ ! -d /apex/com.android.conscrypt/cacerts ]; then
     exit 0
 fi
 
-if ! meta_hybrid_handles_apex; then
+if ! is_hybrid_mount_running; then
     exit 0
 fi
 

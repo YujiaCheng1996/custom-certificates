@@ -87,11 +87,11 @@ function updateLanguageFab() {
 }
 
 function syncLanguageUi() {
+  updateStatusIndicator();
   if (typeof i18n.applyTranslations === "function") {
     i18n.applyTranslations(document);
   }
   updateLanguageFab();
-  updateStatusIndicator();
   renderAllLists();
 }
 
@@ -855,7 +855,7 @@ async function hydrateItemTracked(item, token = state.hydrationToken) {
 function updateStatusIndicator() {
   elements.statusBadge.classList.toggle("connected", state.connected);
   elements.statusBadge.classList.toggle("disconnected", !state.connected);
-  elements.statusText.textContent = state.connected ? t("status.connected") : t("status.disconnected");
+  elements.statusText.dataset.i18n = state.connected ? "status.connected" : "status.disconnected";
 }
 
 function isExpanded(item) {

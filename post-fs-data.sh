@@ -6,23 +6,10 @@ exec 2>&1
 set -x
 
 MODDIR=${MODDIR:-${0%/*}}
-META_HYBRID_CONFIG=
 
-find_meta_hybrid_config() {
-    for config in /data/adb/meta-hybrid/config.toml /data/adb/hybrid-mount/config.toml; do
-        if [ -f "$config" ]; then
-            META_HYBRID_CONFIG="$config"
-            return 0
-        fi
-    done
-
-    META_HYBRID_CONFIG=
-    return 1
-}
-
-meta_hybrid_handles_apex() {
-    find_meta_hybrid_config || return 1
-    grep -Eq 'partitions.*"apex"|^[[:space:]]*"apex"[[:space:]]*$' "$META_HYBRID_CONFIG"
+is_hybrid_mount_running() {
+    local cli="/data/adb/metamodule/hybrid-mount"
+    [ -f "$cli" ] && "$cli" api version >/dev/null 2>&1
 }
 
 set_context() {
@@ -57,7 +44,7 @@ set_context /system/etc/security/cacerts $MODDIR/system/etc/security/cacerts
 # Android 14 support
 # Since Magisk ignore /apex for module file injections, use non-Magisk way
 if [ -d /apex/com.android.conscrypt/cacerts ]; then
-    if meta_hybrid_handles_apex; then
+    if is_hybrid_mount_running; then
         mkdir -p $MODDIR/apex/com.android.conscrypt/cacerts
         cp -f /apex/com.android.conscrypt/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts/
         cp -f $MODDIR/system/etc/security/cacerts/* $MODDIR/apex/com.android.conscrypt/cacerts/
