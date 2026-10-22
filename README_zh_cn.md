@@ -5,13 +5,35 @@
 本模块基于 [AdGuard Certificate](https://github.com/AdguardTeam/adguardcert) 和 [custom-certificate-authorities](https://github.com/Magisk-Modules-Alt-Repo/custom-certificate-authorities)。
 它与上述模块不兼容，因此在使用本模块前请先移除它们。
 
-为了隐藏可能被某些 Root 检测应用发现的 tmpfs 痕迹，本模块新增支持 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount)。请先安装它。
+为了隐藏可能被某些 Root 检测应用发现的 tmpfs 痕迹，本模块新增支持 Metamodule。请先安装一个。
 
 **警告**
 重启后，所有用户证书都会被复制到系统证书存储中。
 请自行承担信任这些证书的风险。
 
-如果你使用 [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) 的旧版本，需要手动将 `apex` 加入其分区列表，否则，本模块可能无法正常工作。
+## 支持的 Metamodule
+
+本模块会自动检测当前使用的 KernelSU Metamodule，并应用正确的证书清理策略：
+
+| Metamodule | 默认后端 | 清理策略 |
+| ------------ | ---------- | ---------- |
+| [meta-overlayfs](https://github.com/tiann/KernelSU/releases) | OverlayFS | 创建 whiteout 文件 (`mknod c 0 0`) |
+| [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | 可配置 | OverlayFS 创建 whiteout；bind mount 直接删除即可 |
+| [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS (Kasumi 可选) | Whiteout 文件（OverlayFS 默认）；Kasumi 需显式按模块/全局启用 |
+
+## 安全：eMudhra 中间 CA 密钥泄露缓解措施
+
+**自 v3.3 起**，本模块在启动时会自动清理受损的 eMudhra 中间 CA 证书。
+
+2026 年 10 月，发现八个 eMudhra 中间 CA 证书的私钥因密钥生成过弱而泄露。这些证书链接到 Android、Chrome、Mozilla 等主流信任存储所信任的根证书。
+
+每次启动时，本模块将按已知受损证书的 **subject_hash_old 前缀** 删除匹配文件：
+
+- `869fbf79` — emSign ECC Root CA - C3
+- `b74d2bd5` — emSign ECC Root CA - G3
+- `dbff3a01` — emSign Root CA - C1
+- `f459871d` — emSign Root CA - G1
+Android 系统存储中通常存在这 4 个此类证书。清理完成后，模块将清理过的证书存储挂载回系统位置，确保应用和浏览器不再信任这些受损的中间 CA。
 
 ## 简单用法
 

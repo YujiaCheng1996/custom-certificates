@@ -5,28 +5,31 @@ exec 2>&1
 
 MODDIR=${0%/*}
 
-META_HYBRID_CONFIG=
+# Global overlayfs detection - same logic as post-fs-data.sh
+# use_overlayfs=1: KernelSU with metamodule (meta-overlayfs, meta-hybrid_mount, kagami)
+# use_overlayfs=0: Magisk (no metamodule)
+detect_overlayfs() {
+    use_overlayfs=0
 
-find_meta_hybrid_config() {
-    for config in \
-        /data/adb/meta-hybrid/config.toml \
-        /data/adb/hybrid-mount/config.toml \
-        /data/adb/modules/hybrid_mount/config.toml; do
-        if [ -f "$config" ]; then
-            META_HYBRID_CONFIG=$config
-            return 0
-        fi
-    done
-    META_HYBRID_CONFIG=
-    return 1
+    # Check for KSU environment
+    if [ -z "$KSU" ] && [ -z "$KSU_VER" ]; then
+        # Magisk environment
+        return 0
+    fi
+
+    # Any metamodule present -> overlayfs mode (metamodule handles mounting)
+    if [ -d /data/adb/modules/meta-overlayfs ] || \
+       [ -d /data/adb/modules/meta-hybrid_mount ] || \
+       [ -d /data/adb/modules/kagami ]; then
+        use_overlayfs=1
+    fi
+    return $use_overlayfs
 }
 
-meta_hybrid_handles_apex() {
-    find_meta_hybrid_config || return 1
-    grep -Eq 'partitions.*"apex"|^[[:space:]]*"apex"[[:space:]]*$' "$META_HYBRID_CONFIG"
-}
+# Run detection
+detect_overlayfs
 
-if ! meta_hybrid_handles_apex; then
+if [ "$use_overlayfs" -eq 0 ];  then
     exit 0
 fi
 
