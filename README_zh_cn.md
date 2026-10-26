@@ -18,27 +18,26 @@
 | Metamodule | 默认后端 | 清理策略 |
 | ------------ | ---------- | ---------- |
 | [meta-overlayfs](https://github.com/tiann/KernelSU/releases) | OverlayFS | 创建 whiteout 文件 (`mknod c 0 0`) |
-| [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | 可配置 | OverlayFS 创建 whiteout；bind mount 直接删除即可 |
+| [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | 可配置（OverlayFS / Magic Mount / VFS） | 登记系统库服务规则：优先 VFS 后端，OverlayFS 兜底；apex 同样以 VFS 规则服务，provider 缺席时回退 bind |
 | [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS / Magic Mount（Kasumi 可选启用） | Whiteout 文件（OverlayFS / Magic Mount）；选择 Kasumi 时采用**完整清理副本 + 目录 bind** |
 
 ## Kasumi（Kagami 内核 LKM）行为说明
 
-当本模块被 [Kasumi](https://github.com/Rouyashiki/Kasumi) 后端接管时（全局
-`/data/adb/kagami/config.json` 中 `mount_backend = kasumi`，或
-`/data/adb/kagami/module_mode.json` 中 `"custom-certificates": "kasumi"`），
-模块不注册任何内核规则：先暂存一份**完整清理副本**（全部系统原始证书 +
-用户证书 − 四个受损 eMudhra 证书 − AdGuard 中间证书），再以目录 bind 覆盖
-`/system/etc/security/cacerts`，并附带与 apex 相同的 nsenter 补挂流程。
+当本模块被 [Kasumi](https://github.com/Rouyashiki/Kasumi) 后端接管时（全局 `/data/adb/kagami/config.json` 中 `mount_backend = kasumi`，或 `/data/adb/kagami/module_mode.json` 中 `"custom-certificates": "kasumi"`）， 模块不注册任何内核规则：先暂存一份**完整清理副本**（全部系统原始证书 + 用户证书 − 四个受损 eMudhra 证书 − AdGuard 中间证书），再以目录 bind 覆盖 `/system/etc/security/cacerts`，并附带与 apex 相同的 nsenter 补挂流程。 
 
-bind 视图是唯一能让所有观察者（包括 root 及其它特权进程）都看不到受损证书的
-机制——内核 hide 规则按设计不会作用于这些进程。本模块完全不触碰 Kagami 的
-规则机制，因此 Kasumi 自身的环境隐藏行为不受任何影响。
+bind 视图是唯一能让所有观察者（包括 root 及其它特权进程）都看不到受损证书的 机制——内核 hide 规则按设计不会作用于这些进程。本模块完全不触碰 Kagami 的 规则机制，因此 Kasumi 自身的环境隐藏行为不受任何影响。 
 
-Kagami 不管理 `/apex`（apex 激活树由 apexd 负责），因此本模块自行挂载处理过的
-apex 证书库，并带有幂等保护（重复执行不会叠加重复挂载）。
+Kagami 不管理 `/apex`（apex 激活树由 apexd 负责），因此本模块自行挂载处理过的 apex 证书库，并带有幂等保护（重复执行不会叠加重复挂载）。 
 
-如果最看重"系统修改环境"的隐蔽性，建议优先选择 OverlayFS / Magic Mount
-后端：它们更贴近原生探测行为。
+如果最看重"系统修改环境"的隐蔽性，建议优先选择 OverlayFS / Magic Mount 后端：它们更贴近原生探测行为。 
+
+## meta-hybrid_mount 行为说明 
+
+meta-hybrid_mount 由它自己的后端服务模块目录，因此在该模式下本模块不再自挂 系统证书库，而是把一条服务规则登记进 `/data/adb/hybrid-mount/config.toml` 的 `[rules.custom-certificates]` 小节： 优先 VFS 后端，OverlayFS 兜底。暂存的 whiteout 对两者都是同一形态 （`mknod c 0 0` 设备文件），删除机制一致。由用户手写的小节属于用户自管， 模块不改动。 
+
+登记的规则会在 post-mount 阶段按实际 provider 状态收敛：首次记录跟随配置中的 全局后端；`hybridmount` provider 在位时提升为 VFS。若 provider 未能加载，其 规则会静默退回原生视图，模块会在当次启动应急 bind 自己的清理副本兜底，并把 登记改回 OverlayFS；后续启动会继续重试 provider。 
+
+meta-hybrid_mount 不管理 `/apex`（apex 激活树由 apexd 负责）。provider 在位时， apex 证书库以零挂载方式服务：一批 whiteout 隐藏受损条目，用户证书通过注入代理 读取暂存副本，全部是每次开机重放的 UID 0 全局规则（内核按 路径 + UID 键替换， 重放不会累积规则）。若 provider 缺席或拒绝下发，该次启动回退为模块自挂的 无 whiteout bind，删除保证不变。
 
 ## 安全：eMudhra 中间 CA 密钥泄露缓解措施
 
@@ -52,7 +51,9 @@ apex 证书库，并带有幂等保护（重复执行不会叠加重复挂载）
 - `b74d2bd5` — emSign ECC Root CA - G3
 - `dbff3a01` — emSign Root CA - C1
 - `f459871d` — emSign Root CA - G1
-Android 系统存储中通常存在这 4 个此类证书。清理完成后，模块将清理过的证书存储挂载回系统位置（Kasumi 模式同样使用真实 bind 视图），确保应用和浏览器不再信任这些受损的中间 CA。
+Android 系统存储中通常存在这 4 个此类证书。清理完成后，处理过的证书库由当前
+生效的后端对外呈现——真实 bind 视图（Kasumi 模式同样适用）、OverlayFS 分层，
+或 meta-hybrid_mount 的 VFS 注入——确保应用和浏览器不再信任这些受损的中间 CA。
 
 ## 简单用法
 

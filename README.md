@@ -18,32 +18,26 @@ This module automatically detects the active KernelSU metamodule and applies the
 | Metamodule | Default Backend | Removal Strategy |
 | ------------ | ----------------- | ------------------ |
 | [meta-overlayfs](https://github.com/tiann/KernelSU/releases) | OverlayFS | Creates whiteout files (`mknod c 0 0`) |
-| [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | Configurable (OverlayFS / Magic Mount) | Whiteout for OverlayFS; simple delete for bind mount |
+| [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | Configurable (OverlayFS / Magic Mount / VFS) | Recorded system rule: VFS preferred, OverlayFS fallback; apex also served as VFS rules, bind fallback if the provider is missing |
 | [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS / Magic Mount (Kasumi opt-in) | Whiteout files (OverlayFS / Magic Mount); **cleaned store + directory bind** when Kasumi is selected |
 
 ## Kasumi (Kagami kernel LKM) Behavior
 
-When [Kasumi](https://github.com/Rouyashiki/Kasumi) is enabled for this module
-(either the global `mount_backend = kasumi` in `/data/adb/kagami/config.json` or
-`"custom-certificates": "kasumi"` in `/data/adb/kagami/module_mode.json`), the
-module registers no kernel rules: it stages a **full cleaned copy** of the
-system store (all stock certificates + user certificates − the four
-compromised eMudhra entries − AdGuard intermediates) and binds it over
-`/system/etc/security/cacerts`, with the same nsenter retry that covers the
-apex store.
+When [Kasumi](https://github.com/Rouyashiki/Kasumi) is enabled for this module (either the global `mount_backend = kasumi` in `/data/adb/kagami/config.json` or `"custom-certificates": "kasumi"` in `/data/adb/kagami/module_mode.json`), the module registers no kernel rules: it stages a **full cleaned copy** of the system store (all stock certificates + user certificates − the four compromised eMudhra entries − AdGuard intermediates) and binds it over `/system/etc/security/cacerts`, with the same nsenter retry that covers the apex store.
 
-A real bind view is the only mechanism that removes the compromised
-certificates for every observer, including root and other privileged processes
-(which kernel hide rules never target by design). Keeping the module outside
-Kagami's rule machinery also leaves Kasumi's own environment concealment
-untouched.
+A real bind view is the only mechanism that removes the compromised certificates for every observer, including root and other privileged processes (which kernel hide rules never target by design). Keeping the module outside Kagami's rule machinery also leaves Kasumi's own environment concealment untouched.
 
-Kagami does not manage `/apex` (apexd owns the activation tree), so this
-module binds its own prepared apex store with an idempotency guard
-(re-running will not stack duplicate binds).
+Kagami does not manage `/apex` (apexd owns the activation tree), so this module binds its own prepared apex store with an idempotency guard (re-running will not stack duplicate binds).
 
-If system-modification concealment matters most to you, prefer the OverlayFS /
-Magic Mount backends: they stay closer to stock probing behavior.
+If system-modification concealment matters most to you, prefer the OverlayFS / Magic Mount backends: they stay closer to stock probing behavior.
+
+## meta-hybrid_mount Behavior
+
+meta-hybrid_mount serves module trees through its own backends, so this module does not bind the system store there. It records a serving rule under `[rules.custom-certificates]` in `/data/adb/hybrid-mount/config.toml` instead: the VFS provider is preferred and OverlayFS is the fallback, and the staged whiteouts are the deletion mechanism for both (a whiteout char device is the same shape for each backend). A rule section written by the user is left untouched.
+
+The record is reconciled in post-mount against the live provider state: the first record follows the configured global backend, and it is promoted to VFS once the `hybridmount` provider is confirmed up. If the provider fails to come up, its rules would degrade to a stock certificate view, so the module applies an emergency bind of its cleaned store for that boot and reconciles the record back to OverlayFS; later boots try the provider again.
+
+meta-hybrid_mount does not manage `/apex` (apexd owns the activation tree). When the provider is live, this module serves the apex store with zero mounts: one whiteout batch hides the compromised entries and injected proxies read the user certificates from the staged copy, all as global (UID 0) rules that are re-applied every boot (kernel rule replacement is keyed by path + UID, so re-runs never duplicate a rule). If the provider is missing or refuses the rules, the module binds its whiteout-free apex store for that boot instead, keeping the deletion guarantee.
 
 ## Security: eMudhra Intermediate CA Compromise Mitigation
 
@@ -57,7 +51,7 @@ On every boot, this module will remove certificates matching known compromised *
 - `b74d2bd5` — emSign ECC Root CA - G3
 - `dbff3a01` — emSign Root CA - C1
 - `f459871d` — emSign Root CA - G1
-Typically 4 such certificates exist in the Android system store. After removal, the cleaned certificate stores are mounted back over the system locations (Kasumi included, via a real bind view), ensuring apps and browsers no longer trust the compromised intermediates.
+Typically 4 such certificates exist in the Android system store. After removal, the cleaned certificate stores are served by the active backend — a real bind view (Kasumi included), an OverlayFS layer, or the meta-hybrid_mount VFS provider — ensuring apps and browsers no longer trust the compromised intermediates.
 
 ## Simple Usage
 
