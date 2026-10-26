@@ -19,7 +19,26 @@
 | ------------ | ---------- | ---------- |
 | [meta-overlayfs](https://github.com/tiann/KernelSU/releases) | OverlayFS | 创建 whiteout 文件 (`mknod c 0 0`) |
 | [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | 可配置 | OverlayFS 创建 whiteout；bind mount 直接删除即可 |
-| [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS (Kasumi 可选) | Whiteout 文件（OverlayFS 默认）；Kasumi 需显式按模块/全局启用 |
+| [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS / Magic Mount（Kasumi 可选启用） | Whiteout 文件（OverlayFS / Magic Mount）；选择 Kasumi 时采用**完整清理副本 + 目录 bind** |
+
+## Kasumi（Kagami 内核 LKM）行为说明
+
+当本模块被 [Kasumi](https://github.com/Rouyashiki/Kasumi) 后端接管时（全局
+`/data/adb/kagami/config.json` 中 `mount_backend = kasumi`，或
+`/data/adb/kagami/module_mode.json` 中 `"custom-certificates": "kasumi"`），
+模块不注册任何内核规则：先暂存一份**完整清理副本**（全部系统原始证书 +
+用户证书 − 四个受损 eMudhra 证书 − AdGuard 中间证书），再以目录 bind 覆盖
+`/system/etc/security/cacerts`，并附带与 apex 相同的 nsenter 补挂流程。
+
+bind 视图是唯一能让所有观察者（包括 root 及其它特权进程）都看不到受损证书的
+机制——内核 hide 规则按设计不会作用于这些进程。本模块完全不触碰 Kagami 的
+规则机制，因此 Kasumi 自身的环境隐藏行为不受任何影响。
+
+Kagami 不管理 `/apex`（apex 激活树由 apexd 负责），因此本模块自行挂载处理过的
+apex 证书库，并带有幂等保护（重复执行不会叠加重复挂载）。
+
+如果最看重"系统修改环境"的隐蔽性，建议优先选择 OverlayFS / Magic Mount
+后端：它们更贴近原生探测行为。
 
 ## 安全：eMudhra 中间 CA 密钥泄露缓解措施
 
@@ -33,7 +52,7 @@
 - `b74d2bd5` — emSign ECC Root CA - G3
 - `dbff3a01` — emSign Root CA - C1
 - `f459871d` — emSign Root CA - G1
-Android 系统存储中通常存在这 4 个此类证书。清理完成后，模块将清理过的证书存储挂载回系统位置，确保应用和浏览器不再信任这些受损的中间 CA。
+Android 系统存储中通常存在这 4 个此类证书。清理完成后，模块将清理过的证书存储挂载回系统位置（Kasumi 模式同样使用真实 bind 视图），确保应用和浏览器不再信任这些受损的中间 CA。
 
 ## 简单用法
 

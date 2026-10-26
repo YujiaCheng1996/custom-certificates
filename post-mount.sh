@@ -36,11 +36,22 @@ fi
 SYSTEM_STORE=$MODDIR/system/etc/security/cacerts
 APEX_STORE=$MODDIR/apex/com.android.conscrypt/cacerts
 
+# True when the target path currently resolves to the same inode as the source
+# (i.e. the desired bind mount is already in place).
+is_bound_to() {
+    [ -d "$1" ] && [ -d "$2" ] || return 1
+    target_stat=$(stat -c '%d:%i' "$1" 2>/dev/null) || return 1
+    source_stat=$(stat -c '%d:%i' "$2" 2>/dev/null) || return 1
+    [ "$target_stat" = "$source_stat" ]
+}
+
 bind_store() {
     source_dir=$1
     target_dir=$2
     [ -d "$source_dir" ] || return 0
     [ -d "$target_dir" ] || return 0
+
+    is_bound_to "$target_dir" "$source_dir" && return 0
 
     mount --bind "$source_dir" "$target_dir"
     for pid in 1 $(pgrep zygote) $(pgrep zygote64) \
@@ -52,5 +63,6 @@ bind_store() {
     done
 }
 
+# All metamodule backends (Kagami kasumi included) bind the same two stores.
 bind_store "$SYSTEM_STORE" /system/etc/security/cacerts
 bind_store "$APEX_STORE" /apex/com.android.conscrypt/cacerts

@@ -19,7 +19,31 @@ This module automatically detects the active KernelSU metamodule and applies the
 | ------------ | ----------------- | ------------------ |
 | [meta-overlayfs](https://github.com/tiann/KernelSU/releases) | OverlayFS | Creates whiteout files (`mknod c 0 0`) |
 | [meta-hybrid_mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) | Configurable (OverlayFS / Magic Mount) | Whiteout for OverlayFS; simple delete for bind mount |
-| [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS (Kasumi optional) | Whiteout files (OverlayFS default); Kasumi requires explicit per-module opt-in |
+| [Kagami](https://github.com/Rouyashiki/Kagami) | OverlayFS / Magic Mount (Kasumi opt-in) | Whiteout files (OverlayFS / Magic Mount); **cleaned store + directory bind** when Kasumi is selected |
+
+## Kasumi (Kagami kernel LKM) Behavior
+
+When [Kasumi](https://github.com/Rouyashiki/Kasumi) is enabled for this module
+(either the global `mount_backend = kasumi` in `/data/adb/kagami/config.json` or
+`"custom-certificates": "kasumi"` in `/data/adb/kagami/module_mode.json`), the
+module registers no kernel rules: it stages a **full cleaned copy** of the
+system store (all stock certificates + user certificates − the four
+compromised eMudhra entries − AdGuard intermediates) and binds it over
+`/system/etc/security/cacerts`, with the same nsenter retry that covers the
+apex store.
+
+A real bind view is the only mechanism that removes the compromised
+certificates for every observer, including root and other privileged processes
+(which kernel hide rules never target by design). Keeping the module outside
+Kagami's rule machinery also leaves Kasumi's own environment concealment
+untouched.
+
+Kagami does not manage `/apex` (apexd owns the activation tree), so this
+module binds its own prepared apex store with an idempotency guard
+(re-running will not stack duplicate binds).
+
+If system-modification concealment matters most to you, prefer the OverlayFS /
+Magic Mount backends: they stay closer to stock probing behavior.
 
 ## Security: eMudhra Intermediate CA Compromise Mitigation
 
@@ -33,7 +57,7 @@ On every boot, this module will remove certificates matching known compromised *
 - `b74d2bd5` — emSign ECC Root CA - G3
 - `dbff3a01` — emSign Root CA - C1
 - `f459871d` — emSign Root CA - G1
-Typically 4 such certificates exist in the Android system store. After removal, the cleaned certificate stores are mounted over the system locations, ensuring apps and browsers no longer trust the compromised intermediates.
+Typically 4 such certificates exist in the Android system store. After removal, the cleaned certificate stores are mounted back over the system locations (Kasumi included, via a real bind view), ensuring apps and browsers no longer trust the compromised intermediates.
 
 ## Simple Usage
 
