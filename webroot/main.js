@@ -15,13 +15,14 @@ const isPlaceholderValue = (value) => (typeof i18n.isPlaceholderValue === "funct
 const state = {
   moduleRoot: "",
   apiScriptPath: "",
-  certs: { custom: [], added: [] },
+  certs: { custom: [], added: [], removed: [] },
   cryptoReady: Boolean(globalThis.crypto?.subtle),
   parserMode: "worker",
   connected: false,
   refreshing: false,
   importing: false,
   parsingAll: false,
+  addingRemovals: false,
   hydrationToken: 0,
   expandedKey: null,
   pendingHydrations: new Map(),
@@ -43,8 +44,11 @@ const elements = {
   importResult: document.querySelector("#importResult"),
   customList: document.querySelector("#customList"),
   addedList: document.querySelector("#addedList"),
+  removedList: document.querySelector("#removedList"),
   customCount: document.querySelector("#customCount"),
   addedCount: document.querySelector("#addedCount"),
+  removedCount: document.querySelector("#removedCount"),
+  browseSystemButton: document.querySelector("#browseSystemButton"),
 };
 
 let parserWorker = null;
@@ -566,7 +570,14 @@ function showChoiceDialog({ title, message, actions, cancelId = "cancel" }) {
 }
 
 function targetBucketLabel(bucket) {
-  return bucket === "custom" ? "cacerts-custom" : "cacerts-added";
+  if (bucket === "custom") return "cacerts-custom";
+  if (bucket === "removed") return "cacerts-removed";
+  return "cacerts-added";
+}
+
+function sourceStoreLabel(bucket) {
+  if (bucket === "apex") return "apex/com.android.conscrypt/cacerts";
+  return "system/etc/security/cacerts";
 }
 
 function nextBucket(item) {
@@ -624,8 +635,12 @@ function scheduleRender() {
 function updateControls() {
   const disableRefresh = !state.connected || state.refreshing || state.importing || state.parsingAll;
   const disableImport = !state.connected || state.refreshing || state.importing;
+  const disableRemovals = !state.connected || state.refreshing || state.importing || state.addingRemovals;
   elements.fabRefreshButton.disabled = disableRefresh;
   elements.importButton.disabled = disableImport;
+  if (elements.browseSystemButton) {
+    elements.browseSystemButton.disabled = disableRemovals;
+  }
 }
 
 function terminateParserWorker(reason = t("error.parserReset")) {
@@ -762,6 +777,9 @@ function parseList(stdout) {
       bucket: parts[1],
       name: parts[2],
       protected: parts[3] === "1",
+      // The system browse command appends the certificate payload as the fifth
+      // field so the picker can resolve the subject CN/O locally.
+      payload: parts[4] || "",
       loaded: false,
       parseError: "",
       parseErrorRaw: "",
@@ -1027,9 +1045,11 @@ function buildAccordionBody(item) {
 }
 
 function renderList(bucket) {
-  const listNode = bucket === "custom" ? elements.customList : elements.addedList;
-  const countNode = bucket === "custom" ? elements.customCount : elements.addedCount;
+  const listNode = elements[`${bucket}List`];
+  const countNode = elements[`${bucket}Count`];
   const items = state.certs[bucket];
+
+  if (!listNode || !countNode) return;
 
   countNode.textContent = String(items.length);
   listNode.innerHTML = "";
@@ -1059,7 +1079,11 @@ function renderList(bucket) {
     const meta = document.createElement("div");
     meta.className = "cert-meta";
     meta.appendChild(createMetaPill(item.loaded ? t("list.expires", { value: displayValue(item.notAfter) }) : t("cert.parsingShort")));
-    if (item.protected) meta.appendChild(createMetaPill(t("cert.protected"), "warn"));
+    if (item.protected) {
+      meta.appendChild(
+        createMetaPill(bucket === "removed" ? t("removal.fixedBadge") : t("cert.protected"), "warn"),
+      );
+    }
     if (item.parseErrorRaw || item.parseError) meta.appendChild(createMetaPill(t("cert.parseFailedShort"), "warn"));
     card.appendChild(meta);
 
@@ -1067,45 +1091,72 @@ function renderList(bucket) {
     actions.className = "card-actions";
     const itemBusy = state.pendingMoves.has(key) || state.pendingDeletes.has(key);
 
-    const deleteButton = document.createElement("button");
-    deleteButton.className = "icon-button icon-button-danger";
-    deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", t("list.deleteAria", { name: item.name }));
-    deleteButton.title = t("list.deleteAria", { name: item.name });
-    deleteButton.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 6h18" />
-        <path d="M8 6V4h8v2" />
-        <path d="M19 6l-1 14H6L5 6" />
-        <path d="M10 10v6" />
-        <path d="M14 10v6" />
-      </svg>
-    `;
-    deleteButton.disabled = itemBusy || !state.connected || state.refreshing || state.importing;
-    deleteButton.addEventListener("click", async () => {
-      await deleteCertificate(item);
-    });
-    actions.appendChild(deleteButton);
-
-    const moveButton = document.createElement("button");
-    moveButton.className = "button button-primary";
-    moveButton.type = "button";
-    moveButton.textContent = t("list.move");
-    if (isMoveDisabled(item)) {
-      moveButton.textContent = t("list.stayInAdded");
-      moveButton.disabled = true;
-    } else {
-      moveButton.disabled = itemBusy || !state.connected || state.refreshing || state.importing;
-      moveButton.addEventListener("click", async () => {
-        await moveCertificate(item);
+    if (bucket === "removed") {
+      // The removal set lists markers, not store copies. Fixed compromised
+      // entries keep their delete button in a disabled state so every row
+      // lines up; user entries can be taken out again, which re-enables the
+      // certificate after the next boot.
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "icon-button icon-button-danger";
+      deleteButton.type = "button";
+      deleteButton.setAttribute("aria-label", t("removal.deleteAria", { name: item.name }));
+      deleteButton.title = t("removal.deleteAria", { name: item.name });
+      deleteButton.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18" />
+          <path d="M8 6V4h8v2" />
+          <path d="M19 6l-1 14H6L5 6" />
+          <path d="M10 10v6" />
+          <path d="M14 10v6" />
+        </svg>
+      `;
+      deleteButton.disabled = item.protected || itemBusy || !state.connected || state.refreshing || state.importing || state.addingRemovals;
+      deleteButton.addEventListener("click", async () => {
+        await deleteCertificate(item);
       });
+      actions.appendChild(deleteButton);
+    } else {
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "icon-button icon-button-danger";
+      deleteButton.type = "button";
+      deleteButton.setAttribute("aria-label", t("list.deleteAria", { name: item.name }));
+      deleteButton.title = t("list.deleteAria", { name: item.name });
+      deleteButton.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18" />
+          <path d="M8 6V4h8v2" />
+          <path d="M19 6l-1 14H6L5 6" />
+          <path d="M10 10v6" />
+          <path d="M14 10v6" />
+        </svg>
+      `;
+      deleteButton.disabled = itemBusy || !state.connected || state.refreshing || state.importing;
+      deleteButton.addEventListener("click", async () => {
+        await deleteCertificate(item);
+      });
+      actions.appendChild(deleteButton);
+
+      const moveButton = document.createElement("button");
+      moveButton.className = "button button-primary";
+      moveButton.type = "button";
+      moveButton.textContent = t("list.move");
+      if (isMoveDisabled(item)) {
+        moveButton.textContent = t("list.stayInAdded");
+        moveButton.disabled = true;
+      } else {
+        moveButton.disabled = itemBusy || !state.connected || state.refreshing || state.importing;
+        moveButton.addEventListener("click", async () => {
+          await moveCertificate(item);
+        });
+      }
+      actions.appendChild(moveButton);
     }
-    actions.appendChild(moveButton);
 
     const detailButton = document.createElement("button");
     detailButton.className = "button button-secondary";
     detailButton.type = "button";
     detailButton.textContent = expanded ? t("list.collapseDetails") : t("list.expandDetails");
+    if (!item.loaded && state.pendingHydrations.has(key)) detailButton.classList.add("is-loading");
     detailButton.disabled = itemBusy || state.refreshing;
     detailButton.addEventListener("click", async () => {
       if (expanded) {
@@ -1128,16 +1179,19 @@ function renderList(bucket) {
 function renderAllLists() {
   renderList("custom");
   renderList("added");
+  renderList("removed");
 }
 
 function reconcileExpandedKey() {
   if (!state.expandedKey) return;
-  const exists = [...state.certs.custom, ...state.certs.added].some((item) => itemKey(item) === state.expandedKey);
+  const exists = [...state.certs.custom, ...state.certs.added, ...state.certs.removed].some(
+    (item) => itemKey(item) === state.expandedKey,
+  );
   if (!exists) state.expandedKey = null;
 }
 
 async function hydrateAllCertificates(token) {
-  const items = [...state.certs.custom, ...state.certs.added];
+  const items = [...state.certs.custom, ...state.certs.added, ...state.certs.removed];
   if (!items.length) {
     state.parsingAll = false;
     updateControls();
@@ -1176,6 +1230,7 @@ async function refreshList({ preserveScroll = false } = {}) {
     const items = parseList(await runApi(["list"]));
     state.certs.custom = items.filter((item) => item.bucket === "custom");
     state.certs.added = items.filter((item) => item.bucket === "added");
+    state.certs.removed = items.filter((item) => item.bucket === "removed");
     reconcileExpandedKey();
     renderAllLists();
   } catch (error) {
@@ -1341,6 +1396,22 @@ async function resolveImportCollision(bucket, sourceLabel, certificate, existing
 }
 
 async function confirmDeleteCertificate(item) {
+  if (item.bucket === "removed") {
+    const action = await showChoiceDialog({
+      title: t("dialog.deleteRemoved.title"),
+      message: [
+        t("dialog.deleteRemoved.line1", { name: item.name }),
+        t("dialog.deleteRemoved.line2"),
+        t("dialog.deleteRemoved.line3"),
+      ].join("\n"),
+      actions: [
+        { id: "cancel", label: t("common.cancel"), variant: "secondary", focus: true },
+        { id: "delete", label: t("common.delete"), variant: "danger" },
+      ],
+    });
+    return action === "delete";
+  }
+
   const action = await showChoiceDialog({
     title: t("dialog.delete.title"),
     message: [
@@ -1354,6 +1425,333 @@ async function confirmDeleteCertificate(item) {
     ],
   });
   return action === "delete";
+}
+
+function createMultiSelectDialog() {
+  const backdrop = document.createElement("div");
+  backdrop.className = "choice-dialog-backdrop";
+  backdrop.hidden = true;
+
+  const dialog = document.createElement("div");
+  dialog.className = "choice-dialog choice-dialog-wide";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+
+  const title = document.createElement("h3");
+  title.className = "choice-dialog-title";
+  const message = document.createElement("p");
+  message.className = "choice-dialog-message";
+  const list = document.createElement("div");
+  list.className = "choice-dialog-list";
+  const actions = document.createElement("div");
+  actions.className = "choice-dialog-actions";
+
+  dialog.append(title, message, list, actions);
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+  return { backdrop, dialog, title, message, list, actions };
+}
+
+// Popup multi-select over the system store entries: a two-way sync with the
+// per-user removal store. Rows are the served system-store entries minus the
+// user-added certificates (those live in cacerts-custom / cacerts-added, so
+// removing them makes no sense); the fixed compromised set never shows up
+// because the served view never contains it. Rows covered by the removal set
+// come pre-checked, and unchecking them on confirm deletes those markers from
+// outside. Each row shows the subject CN on the left and the file name on the
+// right, with the subject O wrapped onto a second line, all sorted and
+// displayed in subject CN dictionary order.
+//
+// The served system view only changes on a reboot, so both the listing and
+// every parsed subject/issuer are cached per session: the first open of a
+// boot pays for the listing and the parse, every later open resolves the
+// cached rows instantly and only re-reads the removal-set selection state.
+const browsePreviewCache = new Map();
+let browseSessionEntries = null;
+
+function hashOfEntryName(name) {
+  return name.replace(/\.\d+$/, "");
+}
+
+function buildBrowseRowInfo(parsed, fallbackName) {
+  const fields = parsed.subjectDn?.fields;
+  const cn = !isPlaceholderValue(fields?.CN?.[0]) ? fields.CN[0] : "";
+  const org = !isPlaceholderValue(fields?.O?.[0]) ? fields.O[0] : "";
+  return {
+    subject: cn || parsed.subjectCn || fallbackName,
+    org,
+  };
+}
+
+// Fresh removal-store snapshot for the dialog: which hashes belong to the
+// user-added certificates, and which markers exist for user 0. Reading it
+// right before opening keeps the pre-check state accurate even when the UI
+// list is stale.
+async function fetchRemovalSnapshot() {
+  const items = parseList(await runApi(["list"]));
+  const names = { custom: [], added: [], removed: [] };
+  for (const item of items) {
+    if (names[item.bucket]) names[item.bucket].push(item.name);
+  }
+
+  const toHashes = (list) => new Set(list.map((name) => hashOfEntryName(name)));
+  return {
+    userHashes: new Set([...toHashes(names.custom), ...toHashes(names.added)]),
+    removedNames: new Set(names.removed),
+    removedHashes: toHashes(names.removed),
+  };
+}
+
+// Resolve the picker rows. On the first open of a boot this fetches and parses
+// the full system listing; later opens reuse the cached listing/parse and only
+// apply the fresh selection state.
+async function resolveBrowseRows() {
+  if (browseSessionEntries === null) {
+    browseSessionEntries = parseList(await runApi(["system"]));
+  }
+  const snapshot = await fetchRemovalSnapshot();
+
+  const grouped = new Map();
+  for (const entry of browseSessionEntries) {
+    if (snapshot.userHashes.has(hashOfEntryName(entry.name))) continue;
+
+    const existing = grouped.get(entry.name);
+    if (existing) continue;
+    grouped.set(entry.name, {
+      name: entry.name,
+      bucket: entry.bucket,
+      payload: entry.payload || "",
+    });
+  }
+
+  const rows = [...grouped.values()];
+  await Promise.all(
+    rows.map(async (row) => {
+      let info = browsePreviewCache.get(row.name);
+      if (info === undefined && row.payload) {
+        try {
+          const parsed = await parseCertificateSafe(base64ToBytes(row.payload));
+          info = buildBrowseRowInfo(parsed, row.name);
+        } catch (_) {
+          info = { parseFailed: true };
+        }
+        browsePreviewCache.set(row.name, info);
+      }
+
+      row.info = info || { parseFailed: true };
+      row.subjectText = row.info.parseFailed ? "" : row.info.subject;
+      row.checked = snapshot.removedHashes.has(hashOfEntryName(row.name));
+      row.wasChecked = row.checked;
+    }),
+  );
+
+  rows.sort((a, b) => {
+    const keyA = a.subjectText || a.name;
+    const keyB = b.subjectText || b.name;
+    return keyA.localeCompare(keyB) || a.name.localeCompare(b.name);
+  });
+
+  return { rows, snapshot };
+}
+
+// Renders the resolved rows and resolves:
+//   confirm  -> the same rows with the final checked state
+//   cancel   -> null
+// The confirm action stays disabled until the selection actually differs from
+// the state the dialog was opened with.
+function showMultiSelectDialog(rows) {
+  if (activeChoiceDialog) {
+    return Promise.resolve(null);
+  }
+
+  const dialog = createMultiSelectDialog();
+  const restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+  dialog.title.textContent = t("dialog.browse.title");
+  dialog.message.textContent = t("dialog.browse.message");
+
+  const confirmButton = document.createElement("button");
+  confirmButton.type = "button";
+  confirmButton.className = "button button-primary";
+  confirmButton.textContent = t("removal.confirmAdd");
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "button button-secondary";
+  cancelButton.textContent = t("common.cancel");
+
+  const hasChanges = () => rows.some((row) => row.checked !== row.wasChecked);
+
+  for (const row of rows) {
+    const labelNode = document.createElement("label");
+    labelNode.className = "choice-entry";
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = row.checked;
+
+    const main = document.createElement("div");
+    main.className = "choice-entry-main";
+
+    const headline = document.createElement("div");
+    headline.className = "choice-entry-headline";
+    const subjectElement = document.createElement("span");
+    subjectElement.className = "choice-entry-subject";
+    if (row.info.parseFailed) {
+      subjectElement.textContent = t("cert.parseFailedShort");
+      subjectElement.classList.add("is-unparsed");
+    } else {
+      subjectElement.textContent = row.info.subject;
+    }
+    const nameElement = document.createElement("code");
+    nameElement.className = "choice-entry-name";
+    nameElement.textContent = row.name;
+
+    const issuerRow = document.createElement("div");
+    issuerRow.className = "choice-entry-org-row";
+    const orgElement = document.createElement("span");
+    orgElement.className = "choice-entry-org";
+    if (!row.info.parseFailed) orgElement.textContent = row.info.org;
+
+    headline.append(subjectElement, nameElement);
+    issuerRow.appendChild(orgElement);
+    main.append(headline, issuerRow);
+    labelNode.append(box, main);
+
+    box.addEventListener("change", () => {
+      row.checked = box.checked;
+      confirmButton.disabled = !hasChanges();
+    });
+
+    dialog.list.appendChild(labelNode);
+  }
+
+  confirmButton.disabled = !hasChanges();
+
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      activeChoiceDialog = null;
+      dialog.backdrop.hidden = true;
+      dialog.backdrop.remove();
+      window.removeEventListener("keydown", handleKeydown);
+      restoreFocus?.focus?.();
+      resolve(result);
+    };
+
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(null);
+      }
+    };
+
+    dialog.backdrop.addEventListener("click", (event) => {
+      if (event.target === dialog.backdrop) {
+        finish(null);
+      }
+    });
+
+    confirmButton.addEventListener("click", () => finish(rows));
+    cancelButton.addEventListener("click", () => finish(null));
+
+    dialog.actions.append(cancelButton, confirmButton);
+    activeChoiceDialog = { dialog, resolve: finish };
+    dialog.backdrop.hidden = false;
+    window.addEventListener("keydown", handleKeydown);
+  });
+}
+
+// Browse the two system stores and sync the removal set: confirmed picks are
+// copied into /data/misc/user/0/cacerts-removed, and rows unchecked from their
+// pre-checked state have their markers deleted from outside. The fixed
+// compromised set never appears in the dialog, so no special handling is
+// needed there.
+async function addRemovalSetEntries() {
+  const browseButton = elements.browseSystemButton;
+  if (browseButton?.disabled || !state.connected) return;
+
+  state.addingRemovals = true;
+  updateControls();
+  browseButton?.classList.add("is-loading");
+  // Commit the spinner to the screen before any work that can feel like a
+  // freeze: the bridge call and the parse must never start unrendered.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  let rows = [];
+  let snapshot = null;
+  try {
+    ({ rows, snapshot } = await resolveBrowseRows());
+  } catch (error) {
+    toast(t("toast.browseFailed", { message: errorMessage(error) }));
+    state.addingRemovals = false;
+    updateControls();
+    return;
+  } finally {
+    browseButton?.classList.remove("is-loading");
+  }
+
+  if (!rows.length) {
+    toast(t("removal.systemEmpty"));
+    state.addingRemovals = false;
+    updateControls();
+    return;
+  }
+
+  const confirmedRows = await showMultiSelectDialog(rows);
+  if (!confirmedRows?.length) {
+    state.addingRemovals = false;
+    updateControls();
+    return;
+  }
+
+  const added = [];
+  const removedOut = [];
+  const failed = [];
+
+  for (const row of confirmedRows) {
+    if (!row.wasChecked && row.checked) {
+      try {
+        await runApi(["add", row.bucket, row.name]);
+        added.push(t("removal.resultAdded", { source: sourceStoreLabel(row.bucket), name: row.name }));
+      } catch (error) {
+        failed.push(t("removal.resultFailed", { name: row.name, message: errorMessage(error) }));
+      }
+    }
+
+    // Unchecking an entry that was part of the removal set deletes every
+    // marker covering that hash, so the certificate returns to the system
+    // directories on the next boot.
+    if (row.wasChecked && !row.checked) {
+      const hash = hashOfEntryName(row.name);
+      const markers = [...snapshot.removedNames].filter((name) => hashOfEntryName(name) === hash);
+      for (const markerName of markers.length ? markers : [row.name]) {
+        try {
+          await runApi(["delete", "removed", markerName]);
+          removedOut.push(markerName);
+        } catch (error) {
+          failed.push(t("removal.resultFailed", { name: markerName, message: errorMessage(error) }));
+        }
+      }
+    }
+  }
+
+  state.addingRemovals = false;
+  updateControls();
+
+  if (added.length || removedOut.length) {
+    toast(t("toast.addComplete"));
+  }
+  const lines = [];
+  if (added.length) lines.push(t("removal.summarySuccess", { entries: added.join("\n") }));
+  if (removedOut.length) lines.push(t("removal.summaryRemovedOut", { entries: removedOut.join("\n") }));
+  if (failed.length) lines.push(t("removal.summaryFailed", { entries: failed.join("\n") }));
+  if (lines.length) {
+    showMessage(elements.importResult, lines.join("\n\n"), failed.length > 0 && !added.length && !removedOut.length);
+  }
+  await refreshList({ preserveScroll: true });
 }
 
 async function importFiles() {
@@ -1426,6 +1824,9 @@ async function importFiles() {
 function bindEvents() {
   elements.fabRefreshButton.addEventListener("click", async () => {
     await refreshList({ preserveScroll: true });
+  });
+  elements.browseSystemButton?.addEventListener("click", async () => {
+    await addRemovalSetEntries();
   });
   elements.fabLanguageButton?.addEventListener("click", () => {
     if (typeof i18n.setLanguage === "function") {

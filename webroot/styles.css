@@ -161,9 +161,16 @@ body {
 
 .column-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px 16px;
   min-width: 0;
+}
+
+/* The browse action always wraps onto its own row below the title block, so
+   the long store path and the button never squeeze each other. */
+.column-head > div {
+  flex: 1 1 100%;
 }
 
 .column,
@@ -197,6 +204,41 @@ body {
   text-align: center;
   font-weight: 700;
   align-self: flex-end;
+}
+
+.browse-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.button.is-loading,
+.browse-button.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.browse-button.is-loading::after,
+.button.is-loading::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: browse-spin 0.8s linear infinite;
+}
+
+@keyframes browse-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .path-row {
@@ -383,6 +425,11 @@ body {
 
 .icon-button:not(:disabled):active {
   transform: scale(0.96);
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .accordion-body {
@@ -597,9 +644,87 @@ code {
   font-size: 0.95em;
 }
 
+.choice-dialog-wide {
+  width: min(620px, calc(100vw - 40px));
+}
+
+.choice-dialog-list {
+  display: grid;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.choice-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.choice-entry input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.choice-entry-name {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.choice-entry-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.choice-entry-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.choice-entry-subject {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.choice-entry-subject.is-unparsed {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.choice-entry-org-row {
+  min-width: 0;
+}
+
+.choice-entry-org {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.choice-entry-org:empty {
+  display: none;
+}
+
 @media (min-width: 960px) {
   .workspace {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .import-form {
@@ -634,6 +759,13 @@ code {
 
   .button {
     width: 100%;
+  }
+
+  /* The browse button keeps its natural width: only the import-form buttons
+     stretch across the full row on narrow screens. */
+  .browse-button {
+    width: auto;
+    margin-left: auto;
   }
 
   .icon-button {

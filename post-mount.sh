@@ -3,7 +3,7 @@
 exec > /dev/null
 exec 2>&1
 
-MODDIR=${0%/*}
+MODDIR=${MODDIR:-${0%/*}}
 
 KAGAMI_MODULES_DIR=/data/adb/modules/kagami
 KAGAMI_DATA_DIR=/data/adb/kagami
@@ -11,6 +11,38 @@ HYBRID_MODE_MARKER=$MODDIR/.hybrid-mount-mode
 
 # Known eMudhra/emSign certificate subject_hash_old prefixes (4 compromised certs)
 EMUDHRA_HASHES="869fbf79 b74d2bd5 dbff3a01 f459871d"
+
+# User-managed removal set, collected from the per-Android-user removal stores
+# (/data/misc/user/<uid>/cacerts-removed). Must stay in sync with
+# post-fs-data.sh: same entry convention and the same fixed set always included.
+REMOVAL_HASHES=$EMUDHRA_HASHES
+
+# Build the removal list the serving rules must honor this boot. The WebUI
+# writes <subject_hash_old>.<index> entries; anything that does not reduce to
+# an eight-digit hex hash is ignored.
+collect_removed_certificates() {
+    collected=
+
+    for removed_store in /data/misc/user/*/cacerts-removed; do
+        [ -d "$removed_store" ] || continue
+
+        for entry in "$removed_store"/*; do
+            [ -f "$entry" ] || continue
+            entry_name=$(basename "$entry")
+            case "$entry_name" in .tmp-*) continue ;; esac
+            hash=${entry_name%.*}
+            case $hash in
+                [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+                    case " $EMUDHRA_HASHES " in *" $hash "*) continue ;; esac
+                    case " $collected " in *" $hash "*) continue ;; esac
+                    collected="$collected $hash"
+                    ;;
+            esac
+        done
+    done
+
+    REMOVAL_HASHES="$EMUDHRA_HASHES$collected"
+}
 
 # Global overlayfs detection - same logic as post-fs-data.sh
 # use_overlayfs=1: KernelSU with metamodule (meta-overlayfs, hybrid_mount, kagami)
@@ -118,7 +150,7 @@ detect_hybrid_cli() {
 }
 
 # Serve the apex store through the provider instead of a bind view: one
-# whiteout batch for the compromised entries and one proxy batch from the
+# whiteout batch for the whole removal list and one proxy batch from the
 # virtual user certificate names to the staged real files. Both are global
 # (UID 0) rules, so root sees the same view; replacement is keyed by
 # (path, UID), so a re-run can never duplicate a serving rule. Returns 0 only
@@ -128,7 +160,7 @@ apex_inject_rules() {
     [ -d "$APEX_CERT_DIR" ] || return 1
 
     names=
-    for hash in $EMUDHRA_HASHES; do
+    for hash in $REMOVAL_HASHES; do
         for certificate in "$APEX_CERT_DIR"/$hash.*; do
             [ -e "$certificate" ] || continue
             names="$names $certificate"
@@ -189,6 +221,8 @@ fi
 
 detect_kagami_kasumi
 detect_meta_hybrid
+
+collect_removed_certificates
 
 SYSTEM_STORE=$MODDIR/system/etc/security/cacerts
 APEX_STORE=$MODDIR/apex/com.android.conscrypt/cacerts

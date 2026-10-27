@@ -56,6 +56,10 @@ copy_store_certificates() {
 # Known eMudhra/emSign certificate subject_hash_old prefixes (4 compromised certs)
 EMUDHRA_HASHES="869fbf79 b74d2bd5 dbff3a01 f459871d"
 
+# User-managed removal set, collected below from the per-Android-user removal
+# stores. The WebUI writes <subject_hash_old>.<index> entries into them.
+REMOVAL_HASHES=$EMUDHRA_HASHES
+
 ADGUARD_PERSONAL_INTERMEDIATE_HASH=47ec1af8
 CUSTOM_DIR=/data/misc/user/0/cacerts-custom
 ADDED_DIR=/data/misc/user/0/cacerts-added
@@ -196,20 +200,80 @@ hybrid_record_rule() {
     } >> "$META_HYBRID_CONFIG"
 }
 
+# Collect the user-managed removal set: every subject_hash_old listed by an
+# existing per-Android-user removal store (/data/misc/user/<uid>/cacerts-removed).
+# Entry names follow the <subject_hash_old>.<index> netkeystore convention;
+# anything that does not reduce to an eight-digit hex hash is ignored. The
+# fixed compromised set stays part of the list in every case.
+collect_removed_certificates() {
+    collected=
+
+    for removed_store in /data/misc/user/*/cacerts-removed; do
+        [ -d "$removed_store" ] || continue
+
+        for entry in "$removed_store"/*; do
+            [ -f "$entry" ] || continue
+            entry_name=$(basename "$entry")
+            case "$entry_name" in .tmp-*) continue ;; esac
+            hash=${entry_name%.*}
+            case $hash in
+                [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+                    case " $EMUDHRA_HASHES " in *" $hash "*) continue ;; esac
+                    case " $collected " in *" $hash "*) continue ;; esac
+                    collected="$collected $hash"
+                    ;;
+            esac
+        done
+    done
+
+    REMOVAL_HASHES="$EMUDHRA_HASHES$collected"
+}
+
+# Keep a readable copy of the whole removal set inside every existing per-user
+# removal store: the fixed compromised certificates plus every user-marked
+# certificate still present in a real system store. Files stored on an earlier
+# boot are left untouched, so the readable information survives even once the
+# stores get cleaned. Directories are never created here: the WebUI owns the
+# removal set and creates its store when the first entry is added.
+preserve_removed_certificates() {
+    for removed_store in /data/misc/user/*/cacerts-removed; do
+        [ -d "$removed_store" ] || continue
+
+        for source_store in /system/etc/security/cacerts \
+            /apex/com.android.conscrypt/cacerts; do
+            [ -d "$source_store" ] || continue
+
+            for hash in $REMOVAL_HASHES; do
+                for certificate in "$source_store"/$hash.*; do
+                    [ -f "$certificate" ] || continue
+                    cert_name=$(basename "$certificate")
+                    [ -e "$removed_store/$cert_name" ] && continue
+                    cp -f "$certificate" "$removed_store/$cert_name" 2>/dev/null
+                done
+            done
+        done
+    done
+}
+
 # Run detection ONCE at startup
 detect_overlayfs
 detect_kagami_kasumi
 detect_meta_hybrid
 
-# Remove the compromised eMudhra certificates known by subject_hash_old prefix.
-# use_whiteouts=1 additionally leaves a whiteout char device (mknod c 0 0) with
-# the original file name so that mount layers which interpret whiteouts
-# (OverlayFS, Magic Mount) hide the lower-layer file.
-clean_emudhra_certificates() {
+# Build the removal list, then keep readable copies of it beside the markers.
+collect_removed_certificates
+preserve_removed_certificates
+
+# Remove every certificate on the removal list (the fixed compromised set plus
+# the user-managed set), matched by subject_hash_old prefix. use_whiteouts=1
+# additionally leaves a whiteout char device (mknod c 0 0) with the original
+# file name so that mount layers which interpret whiteouts (OverlayFS, Magic
+# Mount) hide the lower-layer file.
+clean_removed_certificates() {
     target_dir=$1
     use_whiteouts=$2
 
-    for hash in $EMUDHRA_HASHES; do
+    for hash in $REMOVAL_HASHES; do
         for certificate in "$target_dir"/$hash.*; do
             [ -f "$certificate" ] || continue
             cert_name=$(basename "$certificate")
@@ -261,9 +325,9 @@ done
 # whiteouts are the same char-device shape). A directory bind view would only
 # list them as device files.
 if [ "$kagami_kasumi" -eq 1 ]; then
-    clean_emudhra_certificates "$SYSTEM_STORE" 0
+    clean_removed_certificates "$SYSTEM_STORE" 0
 else
-    clean_emudhra_certificates "$SYSTEM_STORE" "$use_overlayfs"
+    clean_removed_certificates "$SYSTEM_STORE" "$use_overlayfs"
 fi
 rm -f "$SYSTEM_STORE"/${ADGUARD_PERSONAL_INTERMEDIATE_HASH}.*
 chown -R 0:0 "$SYSTEM_STORE"
@@ -287,7 +351,7 @@ if [ -d /apex/com.android.conscrypt/cacerts ]; then
         mkdir -p "$TMP_STORE"
         cp -f /apex/com.android.conscrypt/cacerts/* "$TMP_STORE"/ 2>/dev/null
         copy_user_certificates "$SYSTEM_STORE" "$TMP_STORE"
-        clean_emudhra_certificates "$TMP_STORE" 0
+        clean_removed_certificates "$TMP_STORE" 0
         rm -f "$TMP_STORE"/${ADGUARD_PERSONAL_INTERMEDIATE_HASH}.*
         chown -R 0:0 "$TMP_STORE"
         chmod 755 "$TMP_STORE"
@@ -304,7 +368,7 @@ if [ -d /apex/com.android.conscrypt/cacerts ]; then
         rm -rf "$APEX_STORE"/* 2>/dev/null
         cp -f /apex/com.android.conscrypt/cacerts/* "$APEX_STORE"/ 2>/dev/null
         copy_user_certificates "$SYSTEM_STORE" "$APEX_STORE"
-        clean_emudhra_certificates "$APEX_STORE" 0
+        clean_removed_certificates "$APEX_STORE" 0
         rm -f "$APEX_STORE"/${ADGUARD_PERSONAL_INTERMEDIATE_HASH}.*
         chown -R 0:0 "$APEX_STORE"
         chmod 755 "$APEX_STORE"

@@ -19,7 +19,7 @@
               <span id="statusText" data-i18n="status.connecting">准备连接</span>
             </div>
           </div>
-          <p class="lede" data-i18n="hero.lede">查看、解析、移动与导入用户证书。目录改动会立即写入文件系统，但系统信任链通常需要重启后才会完全生效。</p>
+          <p class="lede" data-i18n="hero.lede">查看、解析、移动与导入用户证书，并管理重启后从系统目录删除的证书。目录改动会立即写入文件系统，但系统信任链需要重启后才会完全生效。</p>
         </div>
       </header>
 
@@ -48,6 +48,19 @@
             </div>
           </div>
           <div id="addedList" class="cert-list"></div>
+        </section>
+        <section class="column">
+          <div class="column-head">
+            <div>
+              <p class="section-label">cacerts-removed</p>
+              <div class="path-row">
+                <h2>/data/misc/user/0/cacerts-removed</h2>
+                <span id="removedCount" class="count-chip">0</span>
+              </div>
+            </div>
+            <button id="browseSystemButton" class="button button-secondary browse-button" type="button" data-i18n="removal.browse">从系统证书中选择不信任</button>
+          </div>
+          <div id="removedList" class="cert-list"></div>
         </section>
       </section>
 
